@@ -181,6 +181,16 @@ router.get("/run-bot", async (req, res) => {
 router.get("/", async (req, res) => {
   res.json({ status: "alive", usage: "GET /api/ivasms/run-bot" });
 });
+// অটো-রান ফাংশন: প্রতি ৫ সেকেন্ড পর পর ওটিপি চেক করবে
+setInterval(async () => {
+    const url = `http://0.0.0.0:${process.env.PORT || 3000}/api/ivasms/run-bot`;
+    try {
+        await fetch(url);
+        console.log("Auto-checking for OTP...");
+    } catch (e) {
+        console.error("Auto-run error:", e.message);
+    }
+}, 5000); // ৫,০০০ মিলি-সেকেন্ড = ৫ সেকেন্ড
 
 module.exports = router;
                    
