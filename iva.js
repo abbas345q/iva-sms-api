@@ -1,18 +1,19 @@
 const express = require("express");
 const https   = require("https");
 const zlib    = require("zlib");
-const fetch   = require("node-fetch"); // টেলিগ্রামের জন্য অতিরিক্ত যোগ করা হয়েছে
+const fetch   = require("node-fetch");
 
 const router = express.Router();
 
 /* ================= CONFIG ================= */
 const BASE_URL       = "https://www.ivasms.com";
-const TERMINATION_ID = "1029603";
 const USER_AGENT     = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/116.0.0.0 Safari/537.36";
 
-// তোমার টেলিগ্রাম কনফিগারেশন
 const TELEGRAM_TOKEN = "8781757745:AAF5FojDwE2Gl4ISj9M9tyPK3gr7ewf_fs8";
 const CHAT_ID        = "-1002295608331";
+
+// Memory to store sent messages to prevent duplicates
+let sentMessages = new Set();
 
 /* ================= COOKIES ================= */
 let COOKIES = {
@@ -20,19 +21,7 @@ let COOKIES = {
   "ivas_sms_session": "eyJpdiI6IlMwRmliU1VLRjhwNWUrL0lZeGVYa3c9PSIsInZhbHVlIjoiczBVWHcybVFDbStpN2w2MnNNVHFFamFESXMxT24vMlliV1UxZkZmRmxrWi8rUXA3NE42ZTVqVmc2Y2xCYkF0cmRZSEFGYmNuVGNUYmEyTVZjWkluZUNpMjNLNGVTQnoxSlIrSHpvb1NrL1ltQmJ2L2tlT1dRcnhzek9LbnBVVHQiLCJtYWMiOiIyZDZkM2FjNjM0MTVkNGE0MWU1ZmMyY2FjYjdjNzFkYzFkMjk4ZjQ5MDE3NGIyMzcwNGE3ZmNkYzhjYTNjMDlmIiwidGFnIjoiIn0%3D"
 };
 
-// টেলিগ্রাম মেসেজ ফাংশন (তোমার মূল কোডের সাথে অতিরিক্ত)
-async function sendToTelegram(message) {
-    const url = `https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`;
-    try {
-        await fetch(url, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ chat_id: CHAT_ID, text: message, parse_mode: 'HTML' })
-        });
-    } catch (e) { console.error("Telegram Error:", e.message); }
-}
-
-/* ================= HELPERS (তোমার অরিজিনাল কোড থেকে) ================= */
+/* ================= HELPERS ================= */
 function getToday() {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
@@ -47,12 +36,24 @@ function getXsrf() {
   catch { return COOKIES["XSRF-TOKEN"] || ""; }
 }
 
-function safeJSON(text) {
-  try { return JSON.parse(text); }
-  catch { return { error: "Invalid JSON", preview: text.substring(0, 300) }; }
+// Function to mask the phone number (e.g., 88017***456)
+function maskNumber(num) {
+    if (num.length < 7) return num;
+    return num.substring(0, 5) + "***" + num.substring(num.length - 3);
 }
 
-/* ================= HTTP REQUEST (তোমার অরিজিনাল ব্রোটলি এবং সব লজিকসহ) ================= */
+async function sendToTelegram(message) {
+    const url = `https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`;
+    try {
+        await fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ chat_id: CHAT_ID, text: message, parse_mode: 'HTML' })
+        });
+    } catch (e) { console.error("Telegram Error:", e.message); }
+}
+
+/* ================= HTTP REQUEST ================= */
 function makeRequest(method, path, body, contentType, extraHeaders = {}) {
   return new Promise((resolve, reject) => {
     const headers = {
@@ -114,9 +115,7 @@ async function fetchToken() {
   return match ? match[1] : null;
 }
 
-/* (তোমার অরিজিনাল কোডের বাকি সব ১০০০% একই রাখা হয়েছে...) */
-
-/* ================= NEW: AUTOMATIC BOT ROUTE (আমি যোগ করেছি) ================= */
+/* ================= AUTOMATIC BOT ROUTE ================= */
 router.get("/run-bot", async (req, res) => {
   try {
     const token = await fetchToken();
@@ -135,12 +134,14 @@ router.get("/run-bot", async (req, res) => {
     const ranges = [...r1.body.matchAll(/toggleRange\('([^']+)'/g)].map(m => m[1]);
 
     let totalSent = 0;
-    for (const range of ranges) {
+    
+    // Process each range in parallel for speed
+    await Promise.all(ranges.map(async (range) => {
       const b2 = new URLSearchParams({ _token: token, start: today, end: today, range }).toString();
       const r2 = await makeRequest("POST", "/portal/sms/received/getsms/number", b2, "application/x-www-form-urlencoded");
       const numbers = [...r2.body.matchAll(/toggleNum[^(]+\('(\d+)'/g)].map(m => m[1]);
       
-      for (const number of numbers) {
+      await Promise.all(numbers.map(async (number) => {
         const b3 = new URLSearchParams({ _token: token, start: today, end: today, Number: number, Range: range }).toString();
         const r3 = await makeRequest("POST", "/portal/sms/received/getsms/number/sms", b3, "application/x-www-form-urlencoded");
         const trAll = [...r3.body.matchAll(/<tr[^>]*>([\s\S]*?)<\/tr>/gi)];
@@ -151,25 +152,35 @@ router.get("/run-bot", async (req, res) => {
           const msgM = row.match(/class="msg-text"[^>]*>([\s\S]*?)<\/div>/i);
           if (msgM) {
             const message = msgM[1].replace(/<[^>]+>/g, "").trim();
-            await sendToTelegram(`<b>📩 New OTP Received</b>\n\n<b>Range:</b> ${range}\n<b>Number:</b> ${number}\n<b>Message:</b> <code>${message}</code>`);
-            totalSent++;
+            const timeM = row.match(/class="time-cell"[^>]*>\s*([0-9:]+)\s*</);
+            const time = timeM ? timeM[1].trim() : "00:00";
+            
+            // Create a unique ID for this specific SMS to prevent double sending
+            const msgId = `${number}_${message}_${time}`;
+            
+            if (!sentMessages.has(msgId)) {
+                const maskedNum = maskNumber(number);
+                await sendToTelegram(`<b>📩 New OTP Received</b>\n\n<b>Number:</b> <code>${maskedNum}</code>\n<b>Message:</b> <code>${message}</code>`);
+                sentMessages.add(msgId);
+                totalSent++;
+                
+                // Clear memory periodically if it gets too large (optional)
+                if (sentMessages.size > 1000) sentMessages.clear();
+            }
           }
         }
-      }
-    }
+      }));
+    }));
+
     res.json({ success: true, messages_sent: totalSent });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-/* ================= তোমার অরিজিনাল রুটগুলো (যেমন ছিল) ================= */
 router.get("/", async (req, res) => {
-  const { type } = req.query;
-  if (!type) return res.json({ error: "Use ?type=numbers or ?type=sms, or use /run-bot for Telegram" });
-  // (তোমার পুরোনো লজিকগুলো এখানে বহাল থাকবে...)
-  res.json({ status: "alive" });
+  res.json({ status: "alive", usage: "GET /api/ivasms/run-bot" });
 });
 
 module.exports = router;
-          
+                   
