@@ -183,13 +183,13 @@ router.get("/", async (req, res) => {
   res.json({ status: "alive", auto_run: "5s" });
 });
 
-// অটো-রান: ৫ সেকেন্ড পর পর সার্ভার নিজেই নিজেকে চেক করবে
+// অটো-রান: 2 সেকেন্ড পর পর সার্ভার নিজেই নিজেকে চেক করবে
 setInterval(async () => {
     const url = `http://0.0.0.0:${process.env.PORT || 3000}/api/ivasms/run-bot`;
     try {
         await fetch(url);
     } catch (e) {}
-}, 5000);
+}, 2000);
 
 module.exports = router;
                       
