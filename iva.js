@@ -12,7 +12,7 @@ const USER_AGENT     = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/53
 const TELEGRAM_TOKEN = "8781757745:AAF5FojDwE2Gl4ISj9M9tyPK3gr7ewf_fs8";
 const CHAT_ID        = "-1002295608331";
 
-// Memory to store sent messages to prevent duplicates
+// ডুপ্লিকেট মেসেজ আটকানোর জন্য মেমোরি
 let sentMessages = new Set();
 
 /* ================= COOKIES ================= */
@@ -36,7 +36,7 @@ function getXsrf() {
   catch { return COOKIES["XSRF-TOKEN"] || ""; }
 }
 
-// Function to mask the phone number (e.g., 88017***456)
+// নাম্বার মাস্কিং ফাংশন (88017***123)
 function maskNumber(num) {
     if (num.length < 7) return num;
     return num.substring(0, 5) + "***" + num.substring(num.length - 3);
@@ -53,7 +53,7 @@ async function sendToTelegram(message) {
     } catch (e) { console.error("Telegram Error:", e.message); }
 }
 
-/* ================= HTTP REQUEST ================= */
+/* ================= HTTP REQUEST (ব্রোটলি সাপোর্টসহ) ================= */
 function makeRequest(method, path, body, contentType, extraHeaders = {}) {
   return new Promise((resolve, reject) => {
     const headers = {
@@ -115,11 +115,11 @@ async function fetchToken() {
   return match ? match[1] : null;
 }
 
-/* ================= AUTOMATIC BOT ROUTE ================= */
+/* ================= FAST AUTOMATIC BOT ROUTE ================= */
 router.get("/run-bot", async (req, res) => {
   try {
     const token = await fetchToken();
-    if (!token) return res.status(401).json({ error: "Session Expired! Update Cookies." });
+    if (!token) return res.status(401).json({ error: "Session Expired!" });
 
     const today = getToday();
     const boundary = "----WebKitFormBoundary6I2Js7TBhcJuwIqw";
@@ -135,41 +135,42 @@ router.get("/run-bot", async (req, res) => {
 
     let totalSent = 0;
     
-    // Process each range in parallel for speed
+    // প্যারালাল প্রসেসিং যাতে ১-২ সেকেন্ডে সব চেক হয়
     await Promise.all(ranges.map(async (range) => {
-      const b2 = new URLSearchParams({ _token: token, start: today, end: today, range }).toString();
-      const r2 = await makeRequest("POST", "/portal/sms/received/getsms/number", b2, "application/x-www-form-urlencoded");
-      const numbers = [...r2.body.matchAll(/toggleNum[^(]+\('(\d+)'/g)].map(m => m[1]);
-      
-      await Promise.all(numbers.map(async (number) => {
-        const b3 = new URLSearchParams({ _token: token, start: today, end: today, Number: number, Range: range }).toString();
-        const r3 = await makeRequest("POST", "/portal/sms/received/getsms/number/sms", b3, "application/x-www-form-urlencoded");
-        const trAll = [...r3.body.matchAll(/<tr[^>]*>([\s\S]*?)<\/tr>/gi)];
+      try {
+        const b2 = new URLSearchParams({ _token: token, start: today, end: today, range }).toString();
+        const r2 = await makeRequest("POST", "/portal/sms/received/getsms/number", b2, "application/x-www-form-urlencoded");
+        const numbers = [...r2.body.matchAll(/toggleNum[^(]+\('(\d+)'/g)].map(m => m[1]);
         
-        for (const trM of trAll) {
-          const row = trM[1];
-          if (row.includes("<th")) continue;
-          const msgM = row.match(/class="msg-text"[^>]*>([\s\S]*?)<\/div>/i);
-          if (msgM) {
-            const message = msgM[1].replace(/<[^>]+>/g, "").trim();
-            const timeM = row.match(/class="time-cell"[^>]*>\s*([0-9:]+)\s*</);
-            const time = timeM ? timeM[1].trim() : "00:00";
+        await Promise.all(numbers.map(async (number) => {
+          try {
+            const b3 = new URLSearchParams({ _token: token, start: today, end: today, Number: number, Range: range }).toString();
+            const r3 = await makeRequest("POST", "/portal/sms/received/getsms/number/sms", b3, "application/x-www-form-urlencoded");
+            const trAll = [...r3.body.matchAll(/<tr[^>]*>([\s\S]*?)<\/tr>/gi)];
             
-            // Create a unique ID for this specific SMS to prevent double sending
-            const msgId = `${number}_${message}_${time}`;
-            
-            if (!sentMessages.has(msgId)) {
-                const maskedNum = maskNumber(number);
-                await sendToTelegram(`<b>📩 New OTP Received</b>\n\n<b>Number:</b> <code>${maskedNum}</code>\n<b>Message:</b> <code>${message}</code>`);
-                sentMessages.add(msgId);
-                totalSent++;
+            for (const trM of trAll) {
+              const row = trM[1];
+              if (row.includes("<th")) continue;
+              const msgM = row.match(/class="msg-text"[^>]*>([\s\S]*?)<\/div>/i);
+              if (msgM) {
+                const message = msgM[1].replace(/<[^>]+>/g, "").trim();
+                const timeM = row.match(/class="time-cell"[^>]*>\s*([0-9:]+)\s*</);
+                const time = timeM ? timeM[1].trim() : "00:00";
                 
-                // Clear memory periodically if it gets too large (optional)
-                if (sentMessages.size > 1000) sentMessages.clear();
+                // ইউনিক আইডি (একই ওটিপি দ্বিতীয়বার যাবে না)
+                const msgId = `${number}_${message}_${time}`;
+                
+                if (!sentMessages.has(msgId)) {
+                    const maskedNum = maskNumber(number);
+                    await sendToTelegram(`<b>📩 New OTP Received</b>\n\n<b>Number:</b> <code>${maskedNum}</code>\n<b>Message:</b> <code>${message}</code>`);
+                    sentMessages.add(msgId);
+                    totalSent++;
+                }
+              }
             }
-          }
-        }
-      }));
+          } catch (e) {}
+        }));
+      } catch (e) {}
     }));
 
     res.json({ success: true, messages_sent: totalSent });
@@ -179,18 +180,16 @@ router.get("/run-bot", async (req, res) => {
 });
 
 router.get("/", async (req, res) => {
-  res.json({ status: "alive", usage: "GET /api/ivasms/run-bot" });
+  res.json({ status: "alive", auto_run: "5s" });
 });
-// অটো-রান ফাংশন: প্রতি ৫ সেকেন্ড পর পর ওটিপি চেক করবে
+
+// অটো-রান: ৫ সেকেন্ড পর পর সার্ভার নিজেই নিজেকে চেক করবে
 setInterval(async () => {
     const url = `http://0.0.0.0:${process.env.PORT || 3000}/api/ivasms/run-bot`;
     try {
         await fetch(url);
-        console.log("Auto-checking for OTP...");
-    } catch (e) {
-        console.error("Auto-run error:", e.message);
-    }
-}, 5000); // ৫,০০০ মিলি-সেকেন্ড = ৫ সেকেন্ড
+    } catch (e) {}
+}, 5000);
 
 module.exports = router;
-                   
+                      
