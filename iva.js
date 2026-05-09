@@ -10,6 +10,7 @@ const BASE_URL       = "https://www.ivasms.com";
 const USER_AGENT     = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/116.0.0.0 Safari/537.36";
 const TELEGRAM_TOKEN = "8781757745:AAF5FojDwE2Gl4ISj9M9tyPK3gr7ewf_fs8";
 const CHAT_ID        = "-1002295608331";
+const ADMIN_ID       = "6781949890"; // এখানে তোমার এডমিন আইডি দেওয়া হয়েছে
 
 // মেমোরি এবং লক সিস্টেম
 let sentMessages = new Set();
@@ -32,12 +33,12 @@ function maskNumber(num) {
     return num.substring(0, 4) + "***" + num.substring(num.length - 4);
 }
 
-async function sendToTelegram(message) {
+async function sendToTelegram(message, targetChat = CHAT_ID) {
     try {
         await fetch(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ chat_id: CHAT_ID, text: message, parse_mode: 'HTML' })
+            body: JSON.stringify({ chat_id: targetChat, text: message, parse_mode: 'HTML' })
         });
     } catch (e) { console.error("TG Error"); }
 }
@@ -73,12 +74,20 @@ function makeRequest(method, path, body, contentType) {
 
 /* ================= MAIN ENGINE ================= */
 async function processBot() {
-  if (isRunning) return; // আগের কাজ শেষ না হলে নতুন কাজ শুরু হবে না
+  if (isRunning) return; 
   isRunning = true;
 
   try {
     const today = getToday();
     const respPortal = await makeRequest("GET", "/portal");
+
+    // কুকিজ এক্সপায়ার হয়েছে কি না চেক
+    if (respPortal.status === 302 || respPortal.body.includes("login")) {
+        await sendToTelegram("⚠️ <b>Alert:</b> আপনার ওটিপি কুকিজের মেয়াদ শেষ হয়ে গেছে! দয়া করে আপডেট করুন।", ADMIN_ID);
+        isRunning = false;
+        return;
+    }
+
     const token = respPortal.body.match(/name="_token"\s+value="([^"]+)"/)?.[1];
     if (!token) throw new Error("No Token");
 
@@ -115,13 +124,21 @@ async function processBot() {
       }));
     }
   } catch (err) { console.log("Engine Error"); }
-  isRunning = false; // কাজ শেষ, এখন নতুন রিকোয়েস্ট নেওয়া যাবে
+  isRunning = false;
 }
 
 /* ================= ROUTES ================= */
-router.get("/run-bot", async (req, res) => {
-  processBot(); // ব্যাকগ্রাউন্ডে চলবে
-  res.json({ success: true, message: "Engine Triggered" });
+
+// ১. তোমার কাঙ্ক্ষিত run-bot লিঙ্ক যা শুধু SUCCESS দেখাবে
+router.get("/run-bot", (req, res) => {
+  processBot(); 
+  res.send("SUCCESS"); 
+});
+
+// ২. টেস্ট লিঙ্ক যা গ্রুপে মেসেজ পাঠাবে
+router.get("/test-bot", async (req, res) => {
+    await sendToTelegram("🛠 <b>Bot Test:</b> আপনার ওটিপি বটটি বর্তমানে সচল আছে।");
+    res.json({ success: true, message: "Test message sent to group" });
 });
 
 router.get("/", (req, res) => res.json({ status: "running" }));
@@ -130,4 +147,4 @@ router.get("/", (req, res) => res.json({ status: "running" }));
 setInterval(processBot, 7000);
 
 module.exports = router;
-              
+    
