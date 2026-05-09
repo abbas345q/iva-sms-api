@@ -8,12 +8,12 @@ const router = express.Router();
 /* ================= CONFIG ================= */
 const BASE_URL       = "https://www.ivasms.com";
 const USER_AGENT     = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/116.0.0.0 Safari/537.36";
-
 const TELEGRAM_TOKEN = "8781757745:AAF5FojDwE2Gl4ISj9M9tyPK3gr7ewf_fs8";
 const CHAT_ID        = "-1002295608331";
 
-// ডুপ্লিকেট মেসেজ আটকানোর জন্য মেমোরি
+// মেমোরি এবং লক সিস্টেম
 let sentMessages = new Set();
+let isRunning = false; 
 
 /* ================= COOKIES ================= */
 let COOKIES = {
@@ -27,80 +27,42 @@ function getToday() {
   return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
 }
 
-function cookieString() {
-  return Object.entries(COOKIES).map(([k,v]) => `${k}=${v}`).join("; ");
-}
-
-function getXsrf() {
-  try { return decodeURIComponent(COOKIES["XSRF-TOKEN"] || ""); }
-  catch { return COOKIES["XSRF-TOKEN"] || ""; }
-}
-
-// নাম্বার মাস্কিং ফাংশন (88017***123)
 function maskNumber(num) {
     if (num.length < 7) return num;
-    return num.substring(0, 5) + "***" + num.substring(num.length - 3);
+    return num.substring(0, 4) + "***" + num.substring(num.length - 4);
 }
 
 async function sendToTelegram(message) {
-    const url = `https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`;
     try {
-        await fetch(url, {
+        await fetch(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ chat_id: CHAT_ID, text: message, parse_mode: 'HTML' })
         });
-    } catch (e) { console.error("Telegram Error:", e.message); }
+    } catch (e) { console.error("TG Error"); }
 }
 
-/* ================= HTTP REQUEST (ব্রোটলি সাপোর্টসহ) ================= */
-function makeRequest(method, path, body, contentType, extraHeaders = {}) {
+/* ================= REQUEST CORE ================= */
+function makeRequest(method, path, body, contentType) {
   return new Promise((resolve, reject) => {
     const headers = {
-      "User-Agent":       USER_AGENT,
-      "Accept":           "*/*",
-      "Accept-Encoding":  "gzip, deflate, br",
-      "Cookie":           cookieString(),
-      "X-Requested-With": "XMLHttpRequest",
-      "X-XSRF-TOKEN":     getXsrf(),
-      "X-CSRF-TOKEN":     getXsrf(),
-      "Origin":           BASE_URL,
-      "Referer":          `${BASE_URL}/portal`,
-      ...extraHeaders
+      "User-Agent": USER_AGENT,
+      "Cookie": Object.entries(COOKIES).map(([k,v]) => `${k}=${v}`).join("; "),
+      "X-XSRF-TOKEN": decodeURIComponent(COOKIES["XSRF-TOKEN"] || ""),
+      "Accept-Encoding": "gzip, br"
     };
-
-    if (method === "POST" && body) {
-      headers["Content-Type"]   = contentType;
-      headers["Content-Length"] = Buffer.byteLength(body);
-    }
+    if (method === "POST") headers["Content-Type"] = contentType;
 
     const req = https.request(BASE_URL + path, { method, headers }, res => {
-      if (res.headers["set-cookie"]) {
-        res.headers["set-cookie"].forEach(c => {
-          const sc = c.split(";")[0];
-          const ki = sc.indexOf("=");
-          if (ki > -1) {
-            const k = sc.substring(0, ki).trim();
-            const v = sc.substring(ki + 1).trim();
-            if (k === "XSRF-TOKEN" || k === "ivas_sms_session") COOKIES[k] = v;
-          }
-        });
-      }
-
       let chunks = [];
       res.on("data", d => chunks.push(d));
       res.on("end", () => {
         let buf = Buffer.concat(chunks);
         try {
-          const enc = res.headers["content-encoding"];
-          if (enc === "gzip") buf = zlib.gunzipSync(buf);
-          else if (enc === "br") buf = zlib.brotliDecompressSync(buf);
+          if (res.headers["content-encoding"] === "gzip") buf = zlib.gunzipSync(buf);
+          else if (res.headers["content-encoding"] === "br") buf = zlib.brotliDecompressSync(buf);
         } catch {}
-        const text = buf.toString("utf-8");
-        if (res.statusCode === 401 || res.statusCode === 419 || text.includes('"message":"Unauthenticated"')) {
-          return reject(new Error("SESSION_EXPIRED"));
-        }
-        resolve({ status: res.statusCode, body: text });
+        resolve({ status: res.statusCode, body: buf.toString("utf-8") });
       });
     });
     req.on("error", reject);
@@ -109,87 +71,63 @@ function makeRequest(method, path, body, contentType, extraHeaders = {}) {
   });
 }
 
-async function fetchToken() {
-  const resp = await makeRequest("GET", "/portal", null, null, { "Accept": "text/html" });
-  const match = resp.body.match(/name="_token"\s+value="([^"]+)"/) || resp.body.match(/"csrf-token"\s+content="([^"]+)"/);
-  return match ? match[1] : null;
-}
+/* ================= MAIN ENGINE ================= */
+async function processBot() {
+  if (isRunning) return; // আগের কাজ শেষ না হলে নতুন কাজ শুরু হবে না
+  isRunning = true;
 
-/* ================= FAST AUTOMATIC BOT ROUTE ================= */
-router.get("/run-bot", async (req, res) => {
   try {
-    const token = await fetchToken();
-    if (!token) return res.status(401).json({ error: "Session Expired!" });
-
     const today = getToday();
+    const respPortal = await makeRequest("GET", "/portal");
+    const token = respPortal.body.match(/name="_token"\s+value="([^"]+)"/)?.[1];
+    if (!token) throw new Error("No Token");
+
     const boundary = "----WebKitFormBoundary6I2Js7TBhcJuwIqw";
-    const parts = [
-      `--${boundary}\r\nContent-Disposition: form-data; name="from"\r\n\r\n${today}`,
-      `--${boundary}\r\nContent-Disposition: form-data; name="to"\r\n\r\n${today}`,
-      `--${boundary}\r\nContent-Disposition: form-data; name="_token"\r\n\r\n${token}`,
-      `--${boundary}--`
-    ].join("\r\n");
+    const parts = [`--${boundary}\r\nContent-Disposition: form-data; name="from"\r\n\r\n${today}`, `--${boundary}\r\nContent-Disposition: form-data; name="to"\r\n\r\n${today}`, `--${boundary}\r\nContent-Disposition: form-data; name="_token"\r\n\r\n${token}`, `--${boundary}--`].join("\r\n");
 
     const r1 = await makeRequest("POST", "/portal/sms/received/getsms", parts, `multipart/form-data; boundary=${boundary}`);
     const ranges = [...r1.body.matchAll(/toggleRange\('([^']+)'/g)].map(m => m[1]);
 
-    let totalSent = 0;
-    
-    // প্যারালাল প্রসেসিং যাতে ১-২ সেকেন্ডে সব চেক হয়
-    await Promise.all(ranges.map(async (range) => {
-      try {
-        const b2 = new URLSearchParams({ _token: token, start: today, end: today, range }).toString();
-        const r2 = await makeRequest("POST", "/portal/sms/received/getsms/number", b2, "application/x-www-form-urlencoded");
-        const numbers = [...r2.body.matchAll(/toggleNum[^(]+\('(\d+)'/g)].map(m => m[1]);
+    for (const range of ranges) {
+      const b2 = new URLSearchParams({ _token: token, start: today, end: today, range }).toString();
+      const r2 = await makeRequest("POST", "/portal/sms/received/getsms/number", b2, "application/x-www-form-urlencoded");
+      const numbers = [...r2.body.matchAll(/toggleNum[^(]+\('(\d+)'/g)].map(m => m[1]);
+      
+      await Promise.all(numbers.map(async (number) => {
+        const b3 = new URLSearchParams({ _token: token, start: today, end: today, Number: number, Range: range }).toString();
+        const r3 = await makeRequest("POST", "/portal/sms/received/getsms/number/sms", b3, "application/x-www-form-urlencoded");
+        const trAll = [...r3.body.matchAll(/<tr[^>]*>([\s\S]*?)<\/tr>/gi)];
         
-        await Promise.all(numbers.map(async (number) => {
-          try {
-            const b3 = new URLSearchParams({ _token: token, start: today, end: today, Number: number, Range: range }).toString();
-            const r3 = await makeRequest("POST", "/portal/sms/received/getsms/number/sms", b3, "application/x-www-form-urlencoded");
-            const trAll = [...r3.body.matchAll(/<tr[^>]*>([\s\S]*?)<\/tr>/gi)];
+        for (const trM of trAll) {
+          const msgM = trM[1].match(/class="msg-text"[^>]*>([\s\S]*?)<\/div>/i);
+          if (msgM) {
+            const message = msgM[1].replace(/<[^>]+>/g, "").trim();
+            const timeM = trM[1].match(/class="time-cell"[^>]*>\s*([0-9:]+)\s*/);
+            const msgId = `${number}_${message}_${timeM ? timeM[1] : ''}`;
             
-            for (const trM of trAll) {
-              const row = trM[1];
-              if (row.includes("<th")) continue;
-              const msgM = row.match(/class="msg-text"[^>]*>([\s\S]*?)<\/div>/i);
-              if (msgM) {
-                const message = msgM[1].replace(/<[^>]+>/g, "").trim();
-                const timeM = row.match(/class="time-cell"[^>]*>\s*([0-9:]+)\s*</);
-                const time = timeM ? timeM[1].trim() : "00:00";
-                
-                // ইউনিক আইডি (একই ওটিপি দ্বিতীয়বার যাবে না)
-                const msgId = `${number}_${message}_${time}`;
-                
-                if (!sentMessages.has(msgId)) {
-                    const maskedNum = maskNumber(number);
-                    await sendToTelegram(`<b>📩 New OTP Received</b>\n\n<b>Number:</b> <code>${maskedNum}</code>\n<b>Message:</b> <code>${message}</code>`);
-                    sentMessages.add(msgId);
-                    totalSent++;
-                }
-              }
+            if (!sentMessages.has(msgId)) {
+                await sendToTelegram(`<b>📩 New OTP</b>\n\n<b>Number:</b> <code>${maskNumber(number)}</code>\n<b>Message:</b> <code>${message}</code>`);
+                sentMessages.add(msgId);
+                if (sentMessages.size > 200) sentMessages.delete(Array.from(sentMessages)[0]);
             }
-          } catch (e) {}
-        }));
-      } catch (e) {}
-    }));
+          }
+        }
+      }));
+    }
+  } catch (err) { console.log("Engine Error"); }
+  isRunning = false; // কাজ শেষ, এখন নতুন রিকোয়েস্ট নেওয়া যাবে
+}
 
-    res.json({ success: true, messages_sent: totalSent });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
+/* ================= ROUTES ================= */
+router.get("/run-bot", async (req, res) => {
+  processBot(); // ব্যাকগ্রাউন্ডে চলবে
+  res.json({ success: true, message: "Engine Triggered" });
 });
 
-router.get("/", async (req, res) => {
-  res.json({ status: "alive", auto_run: "5s" });
-});
+router.get("/", (req, res) => res.json({ status: "running" }));
 
-// অটো-রান: 2 সেকেন্ড পর পর সার্ভার নিজেই নিজেকে চেক করবে
-setInterval(async () => {
-    const url = `http://0.0.0.0:${process.env.PORT || 3000}/api/ivasms/run-bot`;
-    try {
-        await fetch(url);
-    } catch (e) {}
-}, 2000);
+// অটো-রান ইন্টারভ্যাল (7 সেকেন্ড পর পর)
+setInterval(processBot, 7000);
 
 module.exports = router;
-                      
+              
