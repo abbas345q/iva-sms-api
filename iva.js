@@ -13,12 +13,12 @@ const CHAT_ID        = "-1002295608331";
 
 let sentMessages = new Set();
 let isRunning = false; 
-let isInitialSyncDone = false; // শুরুতে সব মেসেজ পাঠানোর ট্র্যাকার
 
+// নতুন আপডেট করা কুকিজ
 const COOKIES = {
-  "cf_clearance": "iWggS0iwYtiI0NlHRXfMIfaiSBTZGMhgSB_oVu4cKsg-1778419602-1.2.1.1-AjIzy1t2xBiDQNya7uV._UktKNKK2Biw5qAcCHWNcboxOUKBNGfexXeo3LSUQNMf2mheLezZNj2DFbzP4LttzZJbfRG9O75J1MbUVuqQYc.arRv0XxUs7usRNKWVK8znrA4qf_qTLSva8oslclitV2vRY3BHJaiVa1E8IZmhW9TnsyO6woH6bknt4vmmZLghzYCSw6vD3yXBrQ1MozWhKELTLAGzcpO67NoNQWWy4aIDrbeh6zhvIRxOlDOrtVPPBH9X6zOKoEYT1c1Drbl4wD4.H3HfQ_zROrLsTiiaL8Bsn4mrCGvOH2DAkkfVobYBucqXLX9LSIo8NMG2Z3omew",
-  "XSRF-TOKEN": "eyJpdiI6ImtFZGtBOFhrVkpuN1VJT3lJdzJtNlE9PSIsInZhbHVlIjoiK1RteTVTQUcya1RqWGQzU20vdU9NNmtSclFrK3Avblhxb3J3UmFVTEdaaVlsUUliUXBycHdvMk9wZnBWQUNXaTRRUlZaQUZ5NENpdmh5U3p2ckpXRkc2c3lqa1B3T1kzRkMxOW1kcHFVTDNKZWhMUm5EK2IxdEZqckJoTHdmQ2QiLCJtYWMiOiI0MDZjYWQ1MDNiYmY5YzZiYjkwODNmOTFlOTA0ZmY2N2Q4YzkxZDk5OWViMWIzZTc2ZTJiZWVjZDM3ZWZlMzYzIiwidGFnIjoiIn0%3D",
-  "ivas_sms_session": "eyJpdiI6IlVNZ1JuVXFqcHdVVXRRZDR0KzhqQ3c9PSIsInZhbHVlIjoiWjVxZWVpVWw2NUM5VGh2UHBJU0YweUZMWGRhV21PRUtkL2g1WE9WRnlqYlJ1cjF0Q3N2b0lwV1A2aWFkc1oxQkh5T2ZYZTVVNFZXOHJyQ0xHTTNmcTJTcnEreHVSSFM2TmI3WFVRMk9RVGZJeXhHcURIUXd6RFNxYjhJaStjM0kiLCJtYWMiOiI4Mzc5MTI0M2M3OTgwMzQ4NDE4NWNhYmVkMWFmMjNhZTVjYWVkM2Q2M2RjMWI1NzY2MTRkZGViN2U2OWY3MzFkIiwidGFnIjoiIn0%3D"
+  "cf_clearance": "E8tIxDZuuuRcb7hWBrtPDqCSUKnGLOWj_rwZzxsp4tw-1778421819-1.2.1.1-.Fj8ulOJP2o.SanqYYdh6TtNaeIg4OnYCNxdak0xPBzVTxMuWdNThJbZ.KjHtN0aSOg_ee4kGcb5dWsZa4XHL.lybxYNVZCU9Y9Bylxl2d76Aps1tEP3ovfm.XCw8m6oY.7mKAa6.hazHggQkzFId0bakUyAYBta3weeIT7x9xRPr0ts53UGOLuoJvM9D_b5KSmuik.BwDYqd7oEYyXuTUK0rSLa8x03shRgXdFgll1RmWeglCeNymniTKV_ei1mLmmFJcCVzedifuyF0bbh7VWJs5gf_t18oURnXGCjYEMBDp6OLOe.dCsCDfDwzYyX6Ben0TUBgBCidJX3M0Hl8A",
+  "XSRF-TOKEN": "eyJpdiI6IkExMTdPbG9IenRXZWpnMTNvZ001b0E9PSIsInZhbHVlIjoiOTNsb3hUdmk3MUg5cE41bXFKejRFeE1idEdZTGF6VnhmTXdsemRRcFVteXZJU3VMMWp1eGpBdlMva1V0S2o5amJyaENGN1piMTU4ekNFYk9pclM0bmsyRWVSUnptTnFaeTRVclZNbjJoc09kaFZHKzN1dWl5YzF0TC9DekZYMmoiLCJtYWMiOiJhMDJmYWM1MGQ0OTAzY2RlZTM4NjdmYjdmOWQxNTZiZDJhZDNkZTE4YjUxZDVjODA4NjZhYzg5OTY0MmQ4ODFmIiwidGFnIjoiIn0%3D",
+  "ivas_sms_session": "eyJpdiI6IlU3Qmc2d3JRK293MUdpRlNBVGZkdGc9PSIsInZhbHVlIjoiak5NbFRudWwrampma0tPZnJIdlpwUis1OFJENjJNOGFWVDZ4cnArN0VRbWF5bnJ0WUVpMHFteVV0RGtEaGpZSW5wdUlvU2VVRzFGSlIxSC96WUp6MHVQb1ZQTmdOQ0pkUmJQc1czaHpXOWZpMk9iTGoxL3JSSmhOUHpvbHd1dHMiLCJtYWMiOiI0ZjkyMzc4ZDlkYWFhYzliM2Q1N2Q4MGMxMDBjOTU1MDlkMTA0MjIwYWU5NzA1YWQ3NWIwMzRhOGZkMjNhM2JmIiwidGFnIjoiIn0%3D"
 };
 
 async function sendToTelegram(message) {
@@ -66,8 +66,6 @@ async function processBot() {
   if (isRunning) return; 
   isRunning = true;
   try {
-    const d = new Date();
-    // বাংলাদেশের টাইম ফরম্যাটে ডেট নেওয়া (সঠিক টাইমিং এর জন্য)
     const today = new Date().toLocaleString("en-ZA", {timeZone: "Asia/Dhaka"}).split(',')[0];
     
     const portal = await makeRequest("GET", "/portal");
@@ -101,11 +99,9 @@ async function processBot() {
             const time = timeM ? timeM[1].trim() : "00:00";
             const msgId = `${number}_${message}_${time}`;
 
-            // যদি এই আইডি আগে পাঠানো না হয়ে থাকে
             if (!sentMessages.has(msgId)) {
                 await sendToTelegram(`<b>📩 New OTP</b>\n\n<b>Number:</b> <code>+${number}</code>\n<b>Message:</b> <code>${message}</code>\n<b>Time:</b> <code>${time}</code>`);
                 sentMessages.add(msgId);
-                // মেমোরি ক্লিয়ার রাখার জন্য ৫০০০ এর বেশি মেসেজ আইডি জমলে ডিলিট করবে
                 if (sentMessages.size > 5000) {
                    const firstKey = sentMessages.values().next().value;
                    sentMessages.delete(firstKey);
@@ -115,7 +111,6 @@ async function processBot() {
         }
       }
     }
-    isInitialSyncDone = true; // প্রথমবার সব ডাটা চেক শেষ
   } catch (err) { console.log("Error:", err.message); }
   finally { isRunning = false; }
 }
@@ -138,10 +133,7 @@ router.get("/run-bot", (req, res) => {
 
 router.get("/", (req, res) => res.json({ status: "alive" }));
 
-// অটো-রান ইন্টারভ্যাল (১০ সেকেন্ড)
 setInterval(processBot, 10000);
-
-// প্রথমবার স্টার্ট হওয়ার ১০ সেকেন্ড পর অটোমেটিক একবার সব ডাটা চেক করবে (Initial Sync)
-setTimeout(processBot, 10000);
+setTimeout(processBot, 5000); // ১০ সেকেন্ডের বদলে ৫ সেকেন্ড পর প্রথমবার রান হবে
 
 module.exports = router;
