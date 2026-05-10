@@ -7,7 +7,7 @@ const router = express.Router();
 
 /* ================= CONFIG ================= */
 const BASE_URL       = "https://www.ivasms.com";
-// তোমার অরিজিনাল ইউজার এজেন্ট আপডেট করা হলো
+// তোমার অরিজিনাল ইউজারএজেন্ট আপডেট করা হলো
 const USER_AGENT     = "Mozilla/5.0 (Android 13; Mobile; rv:128.0) Gecko/128.0 Firefox/128.0";
 const TELEGRAM_TOKEN = "8781757745:AAF5FojDwE2Gl4ISj9M9tyPK3gr7ewf_fs8";
 const CHAT_ID        = "-1002295608331";
