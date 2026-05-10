@@ -13,6 +13,7 @@ const CHAT_ID        = "-1002295608331";
 
 let sentMessages = new Set();
 let isRunning = false; 
+let isInitialSyncDone = false; // শুরুতে সব মেসেজ পাঠানোর ট্র্যাকার
 
 const COOKIES = {
   "cf_clearance": "iWggS0iwYtiI0NlHRXfMIfaiSBTZGMhgSB_oVu4cKsg-1778419602-1.2.1.1-AjIzy1t2xBiDQNya7uV._UktKNKK2Biw5qAcCHWNcboxOUKBNGfexXeo3LSUQNMf2mheLezZNj2DFbzP4LttzZJbfRG9O75J1MbUVuqQYc.arRv0XxUs7usRNKWVK8znrA4qf_qTLSva8oslclitV2vRY3BHJaiVa1E8IZmhW9TnsyO6woH6bknt4vmmZLghzYCSw6vD3yXBrQ1MozWhKELTLAGzcpO67NoNQWWy4aIDrbeh6zhvIRxOlDOrtVPPBH9X6zOKoEYT1c1Drbl4wD4.H3HfQ_zROrLsTiiaL8Bsn4mrCGvOH2DAkkfVobYBucqXLX9LSIo8NMG2Z3omew",
@@ -38,7 +39,8 @@ function makeRequest(method, path, body, contentType) {
       "X-XSRF-TOKEN": decodeURIComponent(COOKIES["XSRF-TOKEN"] || ""),
       "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
       "Accept-Encoding": "gzip, deflate, br",
-      "Referer": "https://www.ivasms.com/portal"
+      "Referer": "https://www.ivasms.com/portal",
+      "Connection": "keep-alive"
     };
     if (method === "POST") headers["Content-Type"] = contentType;
 
@@ -60,21 +62,22 @@ function makeRequest(method, path, body, contentType) {
   });
 }
 
-async function processBot(forceSendAll = false) {
-  if (isRunning && !forceSendAll) return; 
+async function processBot() {
+  if (isRunning) return; 
   isRunning = true;
   try {
     const d = new Date();
-    const today = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+    // বাংলাদেশের টাইম ফরম্যাটে ডেট নেওয়া (সঠিক টাইমিং এর জন্য)
+    const today = new Date().toLocaleString("en-ZA", {timeZone: "Asia/Dhaka"}).split(',')[0];
     
     const portal = await makeRequest("GET", "/portal");
     if (portal.body.includes("login") || portal.status !== 200) {
-        console.log("❌ Login Failed: Cookies expired or invalid.");
-        isRunning = false; return "LOGIN_FAILED";
+        console.log("❌ Cookies Expired!");
+        isRunning = false; return;
     }
 
     const token = portal.body.match(/name="_token"\s+value="([^"]+)"/)?.[1];
-    if (!token) { isRunning = false; return "TOKEN_ERROR"; }
+    if (!token) { isRunning = false; return; }
 
     const b1 = `_token=${token}&from=${today}&to=${today}`;
     const r1 = await makeRequest("POST", "/portal/sms/received/getsms", b1, "application/x-www-form-urlencoded");
@@ -98,41 +101,47 @@ async function processBot(forceSendAll = false) {
             const time = timeM ? timeM[1].trim() : "00:00";
             const msgId = `${number}_${message}_${time}`;
 
-            // forceSendAll মানে পুরানো মেসেজও পাঠাবে
-            if (!sentMessages.has(msgId) || forceSendAll) {
-                await sendToTelegram(`<b>📩 OTP Received</b>\n\n<b>Number:</b> <code>+${number}</code>\n<b>Message:</b> <code>${message}</code>\n<b>Time:</b> <code>${time}</code>`);
-                if (!forceSendAll) sentMessages.add(msgId);
+            // যদি এই আইডি আগে পাঠানো না হয়ে থাকে
+            if (!sentMessages.has(msgId)) {
+                await sendToTelegram(`<b>📩 New OTP</b>\n\n<b>Number:</b> <code>+${number}</code>\n<b>Message:</b> <code>${message}</code>\n<b>Time:</b> <code>${time}</code>`);
+                sentMessages.add(msgId);
+                // মেমোরি ক্লিয়ার রাখার জন্য ৫০০০ এর বেশি মেসেজ আইডি জমলে ডিলিট করবে
+                if (sentMessages.size > 5000) {
+                   const firstKey = sentMessages.values().next().value;
+                   sentMessages.delete(firstKey);
+                }
             }
           }
         }
       }
     }
-    return "SUCCESS";
-  } catch (err) { console.log("Error:", err.message); return "ERROR"; }
+    isInitialSyncDone = true; // প্রথমবার সব ডাটা চেক শেষ
+  } catch (err) { console.log("Error:", err.message); }
   finally { isRunning = false; }
 }
 
 /* ================= ROUTES ================= */
 
-// ১. এটি হিট করলে আজ প্যানেলে আসা সব ওটিপি গ্রুপে চলে যাবে
-router.get("/run-test", async (req, res) => {
-  const status = await processBot(true); 
-  res.json({ status: status, message: "Today's all OTPs sent to group for testing." }); 
-});
-
-// ২. লগইন সাকসেস কি না চেক করার লিঙ্ক
 router.get("/check-login", async (req, res) => {
     const portal = await makeRequest("GET", "/portal");
     if (portal.status === 200 && !portal.body.includes("login")) {
-        res.json({ login: "SUCCESS", message: "Bot is logged in to ivasms.com" });
+        res.json({ login: "SUCCESS", message: "Bot is logged in." });
     } else {
-        res.json({ login: "FAILED", message: "Cookies expired. Please update." });
+        res.json({ login: "FAILED", message: "Cookies expired." });
     }
 });
 
-router.get("/run-bot", (req, res) => { processBot(); res.send("Bot triggered."); });
+router.get("/run-bot", (req, res) => { 
+    processBot(); 
+    res.send("SUCCESS"); 
+});
+
 router.get("/", (req, res) => res.json({ status: "alive" }));
 
+// অটো-রান ইন্টারভ্যাল (১০ সেকেন্ড)
 setInterval(processBot, 10000);
+
+// প্রথমবার স্টার্ট হওয়ার ১০ সেকেন্ড পর অটোমেটিক একবার সব ডাটা চেক করবে (Initial Sync)
+setTimeout(processBot, 10000);
 
 module.exports = router;
