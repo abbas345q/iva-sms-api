@@ -7,7 +7,6 @@ const router = express.Router();
 
 /* ================= CONFIG ================= */
 const BASE_URL       = "https://www.ivasms.com";
-// তোমার অরিজিনাল ইউজারএজেন্ট আপডেট করা হলো
 const USER_AGENT     = "Mozilla/5.0 (Android 13; Mobile; rv:128.0) Gecko/128.0 Firefox/128.0";
 const TELEGRAM_TOKEN = "8781757745:AAF5FojDwE2Gl4ISj9M9tyPK3gr7ewf_fs8";
 const CHAT_ID        = "-1002295608331";
@@ -15,9 +14,8 @@ const CHAT_ID        = "-1002295608331";
 let sentMessages = new Set();
 let isRunning = false; 
 
-// তোমার নতুন দেওয়া সেশন কুকিজ
+// শুধুমাত্র সেশন কুকি ব্যবহার করে দেখা (ক্লাউডফেয়ার ব্লক এড়াতে)
 const COOKIES = {
-  "cf_clearance": "E8tIxDZuuuRcb7hWBrtPDqCSUKnGLOWj_rwZzxsp4tw-1778421819-1.2.1.1-.Fj8ulOJP2o.SanqYYdh6TtNaeIg4OnYCNxdak0xPBzVTxMuWdNThJbZ.KjHtN0aSOg_ee4kGcb5dWsZa4XHL.lybxYNVZCU9Y9Bylxl2d76Aps1tEP3ovfm.XCw8m6oY.7mKAa6.hazHggQkzFId0bakUyAYBta3weeIT7x9xRPr0ts53UGOLuoJvM9D_b5KSmuik.BwDYqd7oEYyXuTUK0rSLa8x03shRgXdFgll1RmWeglCeNymniTKV_ei1mLmmFJcCVzedifuyF0bbh7VWJs5gf_t18oURnXGCjYEMBDp6OLOe.dCsCDfDwzYyX6Ben0TUBgBCidJX3M0Hl8A",
   "XSRF-TOKEN": "eyJpdiI6IkpPVGhvN2RROHBSSDF6N3lKaWRZRGc9PSIsInZhbHVlIjoiYndMaDNpNnRxQWpjdS8vakxjcHNlcXlvUkZLbXVrSHY2VnhSeFJTYW1XTnhjYnFKb3Y0a3lwU2lwZjd3Y3BlcEVKR0sycjA2SGJwWHk0MElXSXIyZzhJbkp4a3RVbjFvYzZRRGIzbzUzTVFEMGJWVVg2a1JJdlZWRkRIMUx3d1kiLCJtYWMiOiIzYTJmMTNiNWY5YjViMjllMzc3MzkyZGFjN2I1ZGZhN2Y3YWYzMjc2YzgxM2UwNzQxN2Y2YzA0YmYzYmY3OGIyIiwidGFnIjoiIn0%3D",
   "ivas_sms_session": "eyJpdiI6Imw1N3pTaGZIeXQ1OUxIU1NHa2U1RlE9PSIsInZhbHVlIjoidStjOUZSem01YjJUWG1kNFhSMC9tcFpnRlJPNjhSLzBEbEF0Y0pSdW04QWFiR1NkRjBqMVFQVXB6VGZyTkdDeTJwRHROTjlEOEd3dDRpMWhhK0grK0FqbkdiK09rK1k0THNvbTVjS1NWU2dTdFhIUHVYYlJmemM0LzVLMVRoeVoiLCJtYWMiOiJlYmQzM2ZmY2E1ZWJmNmY4MTA2NjZmYWNjOTVlNGI0MGJiZmFjYjQ0ZGEyNDljMTQ4MDk1YWFhYTdlYzdlOTk2IiwidGFnIjoiIn0%3D"
 };
@@ -38,9 +36,14 @@ function makeRequest(method, path, body, contentType) {
       "User-Agent": USER_AGENT,
       "Cookie": Object.entries(COOKIES).map(([k,v]) => `${k}=${v}`).join("; "),
       "X-XSRF-TOKEN": decodeURIComponent(COOKIES["XSRF-TOKEN"] || ""),
-      "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+      "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+      "Accept-Language": "en-US,en;q=0.5",
       "Accept-Encoding": "gzip, deflate, br",
       "Referer": "https://www.ivasms.com/portal",
+      "Upgrade-Insecure-Requests": "1",
+      "Sec-Fetch-Dest": "document",
+      "Sec-Fetch-Mode": "navigate",
+      "Sec-Fetch-Site": "same-origin",
       "Connection": "keep-alive"
     };
     if (method === "POST") headers["Content-Type"] = contentType;
@@ -68,10 +71,9 @@ async function processBot() {
   isRunning = true;
   try {
     const today = new Date().toLocaleString("en-ZA", {timeZone: "Asia/Dhaka"}).split(',')[0];
-    
     const portal = await makeRequest("GET", "/portal");
+    
     if (portal.body.includes("login") || portal.status !== 200) {
-        console.log("❌ Cookies Expired or Blocked!");
         isRunning = false; return;
     }
 
@@ -116,22 +118,16 @@ async function processBot() {
   finally { isRunning = false; }
 }
 
-/* ================= ROUTES ================= */
-
 router.get("/check-login", async (req, res) => {
     const portal = await makeRequest("GET", "/portal");
     if (portal.status === 200 && !portal.body.includes("login")) {
-        res.json({ login: "SUCCESS", message: "Bot is logged in." });
+        res.json({ login: "SUCCESS", message: "Logged in without cf_clearance." });
     } else {
-        res.json({ login: "FAILED", message: "Cookies expired or blocked by Cloudflare." });
+        res.json({ login: "FAILED", message: "Both methods failed." });
     }
 });
 
-router.get("/run-bot", (req, res) => { 
-    processBot(); 
-    res.send("SUCCESS"); 
-});
-
+router.get("/run-bot", (req, res) => { processBot(); res.send("SUCCESS"); });
 router.get("/", (req, res) => res.json({ status: "alive" }));
 
 setInterval(processBot, 10000);
