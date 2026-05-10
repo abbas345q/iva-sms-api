@@ -7,18 +7,19 @@ const router = express.Router();
 
 /* ================= CONFIG ================= */
 const BASE_URL       = "https://www.ivasms.com";
-const USER_AGENT     = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
+// তোমার অরিজিনাল ইউজার এজেন্ট আপডেট করা হলো
+const USER_AGENT     = "Mozilla/5.0 (Android 13; Mobile; rv:128.0) Gecko/128.0 Firefox/128.0";
 const TELEGRAM_TOKEN = "8781757745:AAF5FojDwE2Gl4ISj9M9tyPK3gr7ewf_fs8";
 const CHAT_ID        = "-1002295608331";
 
 let sentMessages = new Set();
 let isRunning = false; 
 
-// নতুন আপডেট করা কুকিজ
+// তোমার নতুন দেওয়া সেশন কুকিজ
 const COOKIES = {
   "cf_clearance": "E8tIxDZuuuRcb7hWBrtPDqCSUKnGLOWj_rwZzxsp4tw-1778421819-1.2.1.1-.Fj8ulOJP2o.SanqYYdh6TtNaeIg4OnYCNxdak0xPBzVTxMuWdNThJbZ.KjHtN0aSOg_ee4kGcb5dWsZa4XHL.lybxYNVZCU9Y9Bylxl2d76Aps1tEP3ovfm.XCw8m6oY.7mKAa6.hazHggQkzFId0bakUyAYBta3weeIT7x9xRPr0ts53UGOLuoJvM9D_b5KSmuik.BwDYqd7oEYyXuTUK0rSLa8x03shRgXdFgll1RmWeglCeNymniTKV_ei1mLmmFJcCVzedifuyF0bbh7VWJs5gf_t18oURnXGCjYEMBDp6OLOe.dCsCDfDwzYyX6Ben0TUBgBCidJX3M0Hl8A",
-  "XSRF-TOKEN": "eyJpdiI6IkExMTdPbG9IenRXZWpnMTNvZ001b0E9PSIsInZhbHVlIjoiOTNsb3hUdmk3MUg5cE41bXFKejRFeE1idEdZTGF6VnhmTXdsemRRcFVteXZJU3VMMWp1eGpBdlMva1V0S2o5amJyaENGN1piMTU4ekNFYk9pclM0bmsyRWVSUnptTnFaeTRVclZNbjJoc09kaFZHKzN1dWl5YzF0TC9DekZYMmoiLCJtYWMiOiJhMDJmYWM1MGQ0OTAzY2RlZTM4NjdmYjdmOWQxNTZiZDJhZDNkZTE4YjUxZDVjODA4NjZhYzg5OTY0MmQ4ODFmIiwidGFnIjoiIn0%3D",
-  "ivas_sms_session": "eyJpdiI6IlU3Qmc2d3JRK293MUdpRlNBVGZkdGc9PSIsInZhbHVlIjoiak5NbFRudWwrampma0tPZnJIdlpwUis1OFJENjJNOGFWVDZ4cnArN0VRbWF5bnJ0WUVpMHFteVV0RGtEaGpZSW5wdUlvU2VVRzFGSlIxSC96WUp6MHVQb1ZQTmdOQ0pkUmJQc1czaHpXOWZpMk9iTGoxL3JSSmhOUHpvbHd1dHMiLCJtYWMiOiI0ZjkyMzc4ZDlkYWFhYzliM2Q1N2Q4MGMxMDBjOTU1MDlkMTA0MjIwYWU5NzA1YWQ3NWIwMzRhOGZkMjNhM2JmIiwidGFnIjoiIn0%3D"
+  "XSRF-TOKEN": "eyJpdiI6IkpPVGhvN2RROHBSSDF6N3lKaWRZRGc9PSIsInZhbHVlIjoiYndMaDNpNnRxQWpjdS8vakxjcHNlcXlvUkZLbXVrSHY2VnhSeFJTYW1XTnhjYnFKb3Y0a3lwU2lwZjd3Y3BlcEVKR0sycjA2SGJwWHk0MElXSXIyZzhJbkp4a3RVbjFvYzZRRGIzbzUzTVFEMGJWVVg2a1JJdlZWRkRIMUx3d1kiLCJtYWMiOiIzYTJmMTNiNWY5YjViMjllMzc3MzkyZGFjN2I1ZGZhN2Y3YWYzMjc2YzgxM2UwNzQxN2Y2YzA0YmYzYmY3OGIyIiwidGFnIjoiIn0%3D",
+  "ivas_sms_session": "eyJpdiI6Imw1N3pTaGZIeXQ1OUxIU1NHa2U1RlE9PSIsInZhbHVlIjoidStjOUZSem01YjJUWG1kNFhSMC9tcFpnRlJPNjhSLzBEbEF0Y0pSdW04QWFiR1NkRjBqMVFQVXB6VGZyTkdDeTJwRHROTjlEOEd3dDRpMWhhK0grK0FqbkdiK09rK1k0THNvbTVjS1NWU2dTdFhIUHVYYlJmemM0LzVLMVRoeVoiLCJtYWMiOiJlYmQzM2ZmY2E1ZWJmNmY4MTA2NjZmYWNjOTVlNGI0MGJiZmFjYjQ0ZGEyNDljMTQ4MDk1YWFhYTdlYzdlOTk2IiwidGFnIjoiIn0%3D"
 };
 
 async function sendToTelegram(message) {
@@ -70,7 +71,7 @@ async function processBot() {
     
     const portal = await makeRequest("GET", "/portal");
     if (portal.body.includes("login") || portal.status !== 200) {
-        console.log("❌ Cookies Expired!");
+        console.log("❌ Cookies Expired or Blocked!");
         isRunning = false; return;
     }
 
@@ -122,7 +123,7 @@ router.get("/check-login", async (req, res) => {
     if (portal.status === 200 && !portal.body.includes("login")) {
         res.json({ login: "SUCCESS", message: "Bot is logged in." });
     } else {
-        res.json({ login: "FAILED", message: "Cookies expired." });
+        res.json({ login: "FAILED", message: "Cookies expired or blocked by Cloudflare." });
     }
 });
 
@@ -134,6 +135,7 @@ router.get("/run-bot", (req, res) => {
 router.get("/", (req, res) => res.json({ status: "alive" }));
 
 setInterval(processBot, 10000);
-setTimeout(processBot, 5000); // ১০ সেকেন্ডের বদলে ৫ সেকেন্ড পর প্রথমবার রান হবে
+setTimeout(processBot, 5000);
 
 module.exports = router;
+      
